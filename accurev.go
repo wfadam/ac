@@ -60,9 +60,7 @@ func search(ch <-chan string, allStreams []string ) {
 
 		fmt.Println()
 		for i, s := range sel {
-			if r.MatchString(s) {
-				fmt.Printf("\t%d : %s\n", i, s)
-			}
+			fmt.Printf("\t%d : %s\n", i, s)
 		}
 		fmt.Println("Press <Enter> to proceed")
 	}
