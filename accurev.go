@@ -13,28 +13,25 @@ import (
 	"syscall"
 )
 
-var sel []string // filtered stream slice by pattern
 var argMap map[string]string
 
 func main() {
 
-	resetTTYonTerm()
 	if authen() != nil {
 		fmt.Println("Program exited")
 	}
 
 	allStreams := queryStreams()
+	candidates := []string{}
 
 	done := make(chan bool)
 	pattern := make(chan []byte)
 
-	setTTY()
-	go inputProName(pattern, done)
-	go search(pattern, allStreams)
+	go input(pattern, done)
+	go search(pattern, allStreams, &candidates)
 	<-done
-	resetTTY()
 
-	baseStream := setStream()
+	baseStream := pickStream(candidates)
 	workSpace := strings.Join([]string{setTCRnum(), baseStream}, "_")
 	dir := strings.Join([]string{setDir(), workSpace}, "/")
 
@@ -132,7 +129,7 @@ func setTCRnum() string {
 
 	prompt := "TCR-"
 	for {
-		fmt.Printf("Input %s", prompt)
+		fmt.Printf("\nInput %s", prompt)
 		s, _ := br.ReadString('\n')
 		if r.MatchString(s) {
 			return strings.TrimSpace(prompt + s)
@@ -166,29 +163,32 @@ func authen() error {
 	return nil
 }
 
-func search(ch <-chan []byte, allStreams []string) {
+func search(ch <-chan []byte, allStreams []string, candidates *[]string) {
+	opt := []string{}
 	caseIgnore := "(?i)"
 	for {
 		pat := <-ch
-		if len(pat) == 0 {
-			sel = []string{}
-			disp(pat, sel)
+		if len(pat) == 0 { // when pattern is all deleted
+			opt = []string{}
+			*candidates = opt
+			disp(pat, opt)
 			continue
 		}
 
 		r, err := regexp.Compile(caseIgnore + string(pat))
 		if err != nil {
-			disp(pat, sel)
+			disp(pat, opt)
 			continue
 		}
 
-		sel = []string{}
+		opt = []string{}
 		for _, s := range allStreams {
 			if r.MatchString(s) {
-				sel = append(sel, s)
+				opt = append(opt, s)
 			}
 		}
-		disp(pat, sel)
+		*candidates = opt
+		disp(pat, opt)
 	}
 }
 
@@ -202,13 +202,13 @@ func disp(pat []byte, arr []string) {
 	fmt.Printf("\nSearch Base Stream : %s", string(pat))
 }
 
-func setStream() string {
-	if len(sel) == 0 {
-		fmt.Printf("\nNothing matches, quit\n")
+func pickStream(candidates []string) string {
+	if len(candidates) == 0 {
+		fmt.Printf("\nNothing matches. Quit\n")
 		os.Exit(0)
 	}
-	if len(sel) == 1 {
-		return sel[0]
+	if len(candidates) == 1 {
+		return candidates[0]
 	}
 
 	br := bufio.NewReader(os.Stdin)
@@ -216,38 +216,42 @@ func setStream() string {
 		fmt.Print("\nChoose Stream # : ")
 		s, _ := br.ReadString('\n')
 		i, e := strconv.ParseInt(strings.TrimSpace(s), 10, 0)
-		if e != nil || int(i) >= len(sel) {
-			fmt.Printf("\nInput an integer from 0 to %d\n", len(sel)-1)
+		if e != nil || int(i) >= len(candidates) {
+			fmt.Printf("\nInput an integer from 0 to %d\n", len(candidates)-1)
 			continue
 		} else {
-			return sel[i]
+			return candidates[i]
 		}
 	}
 }
 
-func inputProName(ch chan<- []byte, done chan<- bool) {
+func input(ch chan<- []byte, done chan<- bool) {
 
-	str := []byte{}
-	var b []byte = make([]byte, 1)
+	resetTTYonTerm()
+	setTTY()
 
-	fmt.Printf("Search Backing Stream : %s", string(str))
+	pat := []byte{}
+	b := make([]byte, 1)
 
-outer:
+	disp(pat, []string{})
+
 	for {
 		os.Stdin.Read(b)
 		switch b[0] {
 		case 0x7F: // backspace
-			if len(str) > 0 {
-				str = str[:len(str)-1]
+			if len(pat) > 0 {
+				pat = pat[:len(pat)-1]
 			}
 		case '\n':
+			resetTTY()
 			done <- true
-			break outer
+			return
 		default:
-			str = append(str, b[0])
+			pat = append(pat, b[0])
 		}
-		ch <- str
+		ch <- pat
 	}
+
 }
 
 func queryStreams() []string {
