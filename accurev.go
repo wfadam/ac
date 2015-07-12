@@ -16,24 +16,30 @@ import (
 var argMap map[string]string
 
 func main() {
-
-	if authen() != nil {
+	if Authen() != nil {
 		fmt.Println("Program exited")
+		os.Exit(1)
 	}
 
 	allStreams := queryStreams()
-	candidates := []string{}
-
+	var candidates []string
 	done := make(chan bool)
 	pattern := make(chan []byte)
 
 	go input(pattern, done)
-	go search(pattern, allStreams, &candidates)
+	go func() {
+		for {
+			pat := <-pattern
+			candidates = filter(pat, allStreams)
+			disp(pat, candidates)
+		}
+	}()
+
 	<-done
 
 	baseStream := pickStream(candidates)
 	workSpace := strings.Join([]string{setTCRnum(), baseStream}, "_")
-	dir := strings.Join([]string{setDir(), workSpace}, "/")
+	dir := strings.Join([]string{getPWD(), workSpace}, "/")
 
 	argMap = make(map[string]string)
 	argMap["-b"] = baseStream
@@ -43,7 +49,7 @@ func main() {
 	enc := json.NewEncoder(os.Stdout)
 	enc.Encode(argMap)
 
-	checkOut(argMap)
+	//checkOut(argMap)
 
 	//Run( "accurev", "logout" )
 }
@@ -51,6 +57,7 @@ func main() {
 func bizCard() {
 	fmt.Println("\n\n\n<< Call 85725 for any help >>\n")
 }
+
 func resetTTYonTerm() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -109,7 +116,7 @@ func checkOut(m map[string]string) {
 	}
 }
 
-func setDir() string {
+func getPWD() string {
 	dir, e := os.Getwd()
 	if e != nil {
 		fmt.Println(e)
@@ -155,7 +162,7 @@ func Output(s string, arg ...string) (string, error) { //when stdout is needed
 	return string(o), e
 }
 
-func authen() error {
+func Authen() error {
 	if TryRun("accurev", "show", "sessions") != nil {
 		fmt.Println("AccuRev Login >>")
 		return Run("accurev", "login")
@@ -163,33 +170,24 @@ func authen() error {
 	return nil
 }
 
-func search(ch <-chan []byte, allStreams []string, candidates *[]string) {
-	opt := []string{}
-	caseIgnore := "(?i)"
-	for {
-		pat := <-ch
-		if len(pat) == 0 { // when pattern is all deleted
-			opt = []string{}
-			*candidates = opt
-			disp(pat, opt)
-			continue
-		}
-
-		r, err := regexp.Compile(caseIgnore + string(pat))
-		if err != nil {
-			disp(pat, opt)
-			continue
-		}
-
-		opt = []string{}
-		for _, s := range allStreams {
-			if r.MatchString(s) {
-				opt = append(opt, s)
-			}
-		}
-		*candidates = opt
-		disp(pat, opt)
+func filter(pat []byte, allStreams []string) []string {
+	if len(pat) == 0 { // when no pattern is input
+		return []string{}
 	}
+
+	caseIgnore := "(?i)"
+	r, e := regexp.Compile(caseIgnore + string(pat))
+	if e != nil {
+		return []string{}
+	}
+
+	opt := []string{}
+	for _, s := range allStreams {
+		if r.MatchString(s) {
+			opt = append(opt, s)
+		}
+	}
+	return opt
 }
 
 func disp(pat []byte, arr []string) {
@@ -199,7 +197,7 @@ func disp(pat []byte, arr []string) {
 	for i, s := range arr {
 		fmt.Printf("\t%d : %s\n", i, s)
 	}
-	fmt.Printf("\nSearch Base Stream : %s", string(pat))
+	fmt.Printf("\nSearch base stream : %s", string(pat))
 }
 
 func pickStream(candidates []string) string {
@@ -211,13 +209,14 @@ func pickStream(candidates []string) string {
 		return candidates[0]
 	}
 
+	maxIdx := int64(len(candidates) - 1)
+	msg := fmt.Sprintf("\nChoose stream from 0 to %d : ", maxIdx)
 	br := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print("\nChoose Stream # : ")
+		fmt.Print(msg)
 		s, _ := br.ReadString('\n')
 		i, e := strconv.ParseInt(strings.TrimSpace(s), 10, 0)
-		if e != nil || int(i) >= len(candidates) {
-			fmt.Printf("\nInput an integer from 0 to %d\n", len(candidates)-1)
+		if e != nil || i > maxIdx {
 			continue
 		} else {
 			return candidates[i]
