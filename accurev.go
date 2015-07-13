@@ -2,7 +2,7 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
+	//"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,28 +16,48 @@ import (
 var argMap map[string]string
 
 func main() {
-	if Authen() != nil {
-		fmt.Println("Program exited")
-		os.Exit(1)
+
+	Authen()
+
+	if goPromote() {
+		Run("accurev", "info")
+		promote()
+		os.Exit(0)
 	}
 
 	allStreams := queryStreams()
 	var candidates []string
-	done := make(chan bool)
-	pattern := make(chan []byte)
 
-	go input(pattern, done)
-	go func() {
-		for {
-			pat := <-pattern
-			candidates = filter(pat, allStreams)
-			disp(pat, candidates)
-		}
-	}()
+	if len(os.Args) > 1 { // when zip file name is input
 
-	<-done
+		zipFileName := os.Args[1]
+		top := topWeight(zipFileName, allStreams) // top match index
+
+		fmt.Println( "Recommended base streams for " + zipFileName )
+		candidates = getStreams( top )
+		dispSlice( candidates )
+
+	} else { // when manual search
+
+		done := make(chan bool)
+		pattern := make(chan []byte)
+
+		go input(pattern, done)
+		go func() {
+			for {
+				pat := <-pattern
+				candidates = filter(pat, allStreams)
+				disp(pat, candidates)
+			}
+		}()
+
+		<-done
+	}
 
 	baseStream := pickStream(candidates)
+
+	getTestProgramName(baseStream)
+
 	workSpace := strings.Join([]string{setTCRnum(), baseStream}, "_")
 	dir := strings.Join([]string{getPWD(), workSpace}, "/")
 
@@ -46,12 +66,21 @@ func main() {
 	argMap["-w"] = workSpace
 	argMap["-l"] = dir
 
-	enc := json.NewEncoder(os.Stdout)
-	enc.Encode(argMap)
+	//enc := json.NewEncoder(os.Stdout)
+	//enc.Encode(argMap)
+	checkOut(argMap)
 
-	//checkOut(argMap)
 
 	//Run( "accurev", "logout" )
+}
+
+func goPromote() bool {
+
+	if TryRun("accurev", "stat", ".") != nil {
+		return false
+	}
+	
+	return true
 }
 
 func bizCard() {
@@ -78,24 +107,50 @@ func flat(m map[string]string) []string {
 	return cmd
 }
 
-func addKeep() {
-	os.Chdir(argMap["-l"])
-
+func promote() {
 	fmt.Println("External Files:")
-	o, e := Output("accurev", "stat", "-R", ".", "-x")
-	fmt.Println(o)
+	o, _ := Output("accurev", "stat", "-R", ".", "-x")
+	if len(o) != 0 {
+		fmt.Println(o)
+		confirm( "Proceed to add new files ? (Y/n) " )
+		Run( "accurev", "add", "-x" )
+	}
 
 	fmt.Println("Modified Files:")
-	o, e = Output("accurev", "stat", "-R", ".", "-m")
-	fmt.Println(o)
+	o, _ = Output("accurev", "stat", "-R", ".", "-m")
+	if len(o) != 0 {
+		fmt.Println(o)
+		confirm( "Proceed to promote modified files ? (Y/n) " )
+		Run( "accurev", "keep", "-m", "-c", "automated"  )
+	} 
 
 	fmt.Println("Pending Files:")
-	o, e = Output("accurev", "stat", "-R", ".", "-m")
-	fmt.Println(o)
+	o, _ = Output("accurev", "stat", "-R", ".", "-p")
+	if len(o) != 0 {
+		fmt.Println(o)
+		confirm( "Proceed to promote pending files ? (Y/n) " )
+		Run( "accurev", "promote", "-p", "-c", "automated"  )
+	} 
+}
 
-	fmt.Println(e)
+func confirm(msg string) {
+
+	fmt.Print( msg )
+	var b []byte = make([]byte, 2)
+again:
+	os.Stdin.Read(b)
+	switch b[0] {
+	case 'Y':
+		return
+	case 'y':
+		fmt.Print( msg )
+		goto again
+	default:
+		os.Exit(0)
+	}
 
 }
+
 func checkOut(m map[string]string) {
 	fmt.Printf("\n\n\n")
 	fmt.Printf("Base Stream    : %s\n", m["-b"])
@@ -106,7 +161,7 @@ func checkOut(m map[string]string) {
 	os.Stdin.Read(b)
 	switch b[0] {
 	case 'y':
-		fmt.Println("Checking out....")
+		fmt.Println("Checking out workspace....")
 		args := append([]string{"mkws"}, flat(argMap)...)
 		Run("accurev", args...)
 		os.Chdir(argMap["-l"])
@@ -124,6 +179,29 @@ func getPWD() string {
 	}
 
 	return dir
+}
+
+func getTestProgramName(bs string) {
+	fmt.Printf("\nQuerying Test Program Name ")
+
+	patDieConfDir := "[1-9]+D([1-9]+CE)?"
+	r, _ := regexp.Compile("_" + patDieConfDir)
+	if !r.MatchString(bs) { // void of "_xDxCE" in stream name
+		fmt.Printf("[not applicable]\n")
+		return
+	}
+
+	r, _ = regexp.Compile("./" + patDieConfDir)
+	o, e := Output("accurev", "files", "-s", bs)
+	if e != nil || !r.MatchString(o) { // void of file ./xDxCE/proname on server
+		fmt.Printf("[nothing found]\n")
+		return
+	}
+
+	proNameFile := r.FindString(o)[2:] + "/proname"
+	o, _ = Output("accurev", "cat", "-v", bs, proNameFile)
+	fmt.Printf(" : %s\n", o)
+
 }
 
 func setTCRnum() string {
@@ -154,7 +232,14 @@ func Run(s string, arg ...string) error { //when stdin is needed
 	cmd := exec.Command(s, arg...)
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
-	return cmd.Run()
+	cmd.Stderr = os.Stderr
+
+	e:=cmd.Run()
+	if e != nil {
+		fmt.Printf( "Exit on execution of %s %s\n", s, arg )
+		os.Exit(1)
+	}
+	return e
 }
 
 func Output(s string, arg ...string) (string, error) { //when stdout is needed
@@ -162,12 +247,11 @@ func Output(s string, arg ...string) (string, error) { //when stdout is needed
 	return string(o), e
 }
 
-func Authen() error {
+func Authen() {
 	if TryRun("accurev", "show", "sessions") != nil {
 		fmt.Println("AccuRev Login >>")
-		return Run("accurev", "login")
+		Run("accurev", "login")
 	}
-	return nil
 }
 
 func filter(pat []byte, allStreams []string) []string {
@@ -190,13 +274,17 @@ func filter(pat []byte, allStreams []string) []string {
 	return opt
 }
 
+func dispSlice( arr []string ) {
+	for i, s := range arr {
+		fmt.Printf("\t%d : %s\n", i, s)
+	}
+}
+
 func disp(pat []byte, arr []string) {
 	if len(arr) > 0 {
 		fmt.Print("\n\n\n")
 	}
-	for i, s := range arr {
-		fmt.Printf("\t%d : %s\n", i, s)
-	}
+	dispSlice( arr )
 	fmt.Printf("\nSearch base stream : %s", string(pat))
 }
 
@@ -205,9 +293,9 @@ func pickStream(candidates []string) string {
 		fmt.Printf("\nNothing matches. Quit\n")
 		os.Exit(0)
 	}
-	if len(candidates) == 1 {
-		return candidates[0]
-	}
+	//if len(candidates) == 1 {
+	//	return candidates[0]
+	//}
 
 	maxIdx := int64(len(candidates) - 1)
 	msg := fmt.Sprintf("\nChoose stream from 0 to %d : ", maxIdx)
@@ -268,7 +356,7 @@ func queryStreams() []string {
 			sms = append(sms, ln[0])
 		}
 	}
-	fmt.Printf("%d Dynamic Streams are queried\n", len(sms))
+	fmt.Printf("%d Dynamic Streams were queried\n", len(sms))
 	return sms
 
 	//return []string{
