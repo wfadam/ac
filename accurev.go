@@ -16,7 +16,6 @@ import (
 var argMap map[string]string
 
 func main() {
-
 	Authen()
 
 	if goPromote() {
@@ -25,29 +24,33 @@ func main() {
 		os.Exit(0)
 	}
 
+	clearTTY()
 	allStreams := queryStreams()
 	var candidates []string
 
-	if len(os.Args) > 1 { // when zip file name is input
+	if len(os.Args) > 1 { // when do search with zip file name
 
 		zipFileName := os.Args[1]
 		top := topWeight(zipFileName, allStreams) // top match index
+		fmt.Println("Recommended base streams for " + zipFileName)
+		candidates = getStreams(top)
+		dispSlice(candidates)
 
-		fmt.Println( "Recommended base streams for " + zipFileName )
-		candidates = getStreams( top )
-		dispSlice( candidates )
+	} else { // when do manual search
 
-	} else { // when manual search
-
+		tMap := make(map[string]string)
 		done := make(chan bool)
 		pattern := make(chan []byte)
+
+		var pat []byte
 
 		go input(pattern, done)
 		go func() {
 			for {
-				pat := <-pattern
+				pat = <-pattern
 				candidates = filter(pat, allStreams)
 				disp(pat, candidates)
+				dispatchQuery(pat, candidates, tMap)
 			}
 		}()
 
@@ -55,9 +58,6 @@ func main() {
 	}
 
 	baseStream := pickStream(candidates)
-
-	getTestProgramName(baseStream)
-
 	workSpace := strings.Join([]string{setTCRnum(), baseStream}, "_")
 	dir := strings.Join([]string{getPWD(), workSpace}, "/")
 
@@ -70,8 +70,30 @@ func main() {
 	//enc.Encode(argMap)
 	checkOut(argMap)
 
-
 	//Run( "accurev", "logout" )
+}
+
+func dispatchQuery(pat []byte, tgt []string, tNameMap map[string]string) {
+	if len(tgt) == 0 {
+		return
+	}
+
+	if len(tgt) <= 5 {
+
+		jobs := make(chan string, len(tgt))
+		for _, s := range tgt {
+			jobs <- s
+		}
+
+		for i, s := range tgt {
+			go func(id int, sn string) {
+				if _, has := tNameMap[sn]; !has {
+					tNameMap[sn] = fmt.Sprintf("%s\t, %s", sn, getTestProgramName(sn))
+				}
+				dispMap(pat, tgt, tNameMap)
+			}(i, s)
+		}
+	}
 }
 
 func goPromote() bool {
@@ -79,7 +101,7 @@ func goPromote() bool {
 	if TryRun("accurev", "stat", ".") != nil {
 		return false
 	}
-	
+
 	return true
 }
 
@@ -112,30 +134,30 @@ func promote() {
 	o, _ := Output("accurev", "stat", "-R", ".", "-x")
 	if len(o) != 0 {
 		fmt.Println(o)
-		confirm( "Proceed to add new files ? (Y/n) " )
-		Run( "accurev", "add", "-x" )
+		confirm("Proceed to add new files ? (Y/n) ")
+		Run("accurev", "add", "-x")
 	}
 
 	fmt.Println("Modified Files:")
 	o, _ = Output("accurev", "stat", "-R", ".", "-m")
 	if len(o) != 0 {
 		fmt.Println(o)
-		confirm( "Proceed to promote modified files ? (Y/n) " )
-		Run( "accurev", "keep", "-m", "-c", "automated"  )
-	} 
+		confirm("Proceed to promote modified files ? (Y/n) ")
+		Run("accurev", "keep", "-m", "-c", "automated")
+	}
 
 	fmt.Println("Pending Files:")
 	o, _ = Output("accurev", "stat", "-R", ".", "-p")
 	if len(o) != 0 {
 		fmt.Println(o)
-		confirm( "Proceed to promote pending files ? (Y/n) " )
-		Run( "accurev", "promote", "-p", "-c", "automated"  )
-	} 
+		confirm("Proceed to promote pending files ? (Y/n) ")
+		Run("accurev", "promote", "-p", "-c", "automated")
+	}
 }
 
 func confirm(msg string) {
 
-	fmt.Print( msg )
+	fmt.Print(msg)
 	var b []byte = make([]byte, 2)
 again:
 	os.Stdin.Read(b)
@@ -143,7 +165,7 @@ again:
 	case 'Y':
 		return
 	case 'y':
-		fmt.Print( msg )
+		fmt.Print(msg)
 		goto again
 	default:
 		os.Exit(0)
@@ -181,26 +203,27 @@ func getPWD() string {
 	return dir
 }
 
-func getTestProgramName(bs string) {
-	fmt.Printf("\nQuerying Test Program Name ")
+func getTestProgramName(bs string) string {
+	//fmt.Printf("\nQuerying Test Program Name ")
 
 	patDieConfDir := "[1-9]+D([1-9]+CE)?"
 	r, _ := regexp.Compile("_" + patDieConfDir)
 	if !r.MatchString(bs) { // void of "_xDxCE" in stream name
-		fmt.Printf("[not applicable]\n")
-		return
+		//fmt.Printf("[not applicable]\n")
+		return ""
 	}
 
 	r, _ = regexp.Compile("./" + patDieConfDir)
 	o, e := Output("accurev", "files", "-s", bs)
 	if e != nil || !r.MatchString(o) { // void of file ./xDxCE/proname on server
-		fmt.Printf("[nothing found]\n")
-		return
+		//fmt.Printf("[nothing found]\n")
+		return ""
 	}
 
 	proNameFile := r.FindString(o)[2:] + "/proname"
 	o, _ = Output("accurev", "cat", "-v", bs, proNameFile)
-	fmt.Printf(" : %s\n", o)
+	//fmt.Printf(" : %s\n", o)
+	return strings.TrimSpace(fmt.Sprintf("%s", o))
 
 }
 
@@ -234,9 +257,9 @@ func Run(s string, arg ...string) error { //when stdin is needed
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 
-	e:=cmd.Run()
+	e := cmd.Run()
 	if e != nil {
-		fmt.Printf( "Exit on execution of %s %s\n", s, arg )
+		fmt.Printf("Exit on execution of %s %s\n", s, arg)
 		os.Exit(1)
 	}
 	return e
@@ -274,17 +297,39 @@ func filter(pat []byte, allStreams []string) []string {
 	return opt
 }
 
-func dispSlice( arr []string ) {
+func dispSlice(arr []string) {
 	for i, s := range arr {
 		fmt.Printf("\t%d : %s\n", i, s)
 	}
 }
 
-func disp(pat []byte, arr []string) {
-	if len(arr) > 0 {
-		fmt.Print("\n\n\n")
+func clearTTY() {
+	Run("echo", "-e", "\\033c") // clear the screen
+}
+
+func dispMap(pat []byte, arr []string, m map[string]string) {
+	clearTTY()
+	//if len(arr) > 0 {
+	//	fmt.Print("\n\n\n")
+	//}
+
+	tgt := append([]string{}, arr...) // defensive copy
+	for i, s := range tgt {
+		v, has := m[s]
+		if has {
+			tgt[i] = v
+		}
 	}
-	dispSlice( arr )
+	dispSlice(tgt)
+	fmt.Printf("\nSearch base stream : %s", string(pat))
+}
+
+func disp(pat []byte, arr []string) {
+	clearTTY()
+	//if len(arr) > 0 {
+	//	fmt.Print("\n\n\n")
+	//}
+	dispSlice(arr)
 	fmt.Printf("\nSearch base stream : %s", string(pat))
 }
 
@@ -359,7 +404,7 @@ func queryStreams() []string {
 	fmt.Printf("%d Dynamic Streams were queried\n", len(sms))
 	return sms
 
-	//return []string{
+	//return []string{//a8w4db
 	//	"T73_1Znm_128gb_ABL_eX3_2P_SDSIP_768_16D",
 	//	"T73_1Ynm_64gb_ABL_eX3_1P_TSOP_768_1D",
 	//	"T73_1Znm_64gb_ABL_eX2_4P_SSD-BGA_768_8D",
