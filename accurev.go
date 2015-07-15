@@ -16,14 +16,14 @@ import (
 var argMap map[string]string
 
 func main() {
-	Authen()
 
 	if goPromote() {
-		Run("accurev", "info")
+		Login()
 		promote()
 		os.Exit(0)
 	}
 
+	Authen()
 	clearTTY()
 	allStreams := queryStreams()
 	var candidates []string
@@ -59,7 +59,7 @@ func main() {
 
 	baseStream := pickStream(candidates)
 	workSpace := strings.Join([]string{setTCRnum(), baseStream}, "_")
-	dir := strings.Join([]string{getPWD(), workSpace}, "/")
+	dir := strings.Join([]string{pwd(), workSpace}, "/")
 
 	argMap = make(map[string]string)
 	argMap["-b"] = baseStream
@@ -70,7 +70,7 @@ func main() {
 	//enc.Encode(argMap)
 	checkOut(argMap)
 
-	//Run( "accurev", "logout" )
+	Logout()
 }
 
 func dispatchQuery(pat []byte, tgt []string, tNameMap map[string]string) {
@@ -130,6 +130,7 @@ func flat(m map[string]string) []string {
 }
 
 func promote() {
+	Login()
 	fmt.Println("External Files:")
 	o, _ := Output("accurev", "stat", "-R", ".", "-x")
 	if len(o) != 0 {
@@ -175,14 +176,16 @@ again:
 
 func checkOut(m map[string]string) {
 	fmt.Printf("\n\n\n")
-	fmt.Printf("Base Stream    : %s\n", m["-b"])
-	fmt.Printf("WorkSpace Path : %s\n", m["-l"])
-	fmt.Printf("\nProceed to create workspace (y/n) ? ")
+	fmt.Printf("Copy stream   : %s\n", m["-b"])
+	fmt.Printf("To local path : %s\n", m["-l"])
+	fmt.Printf("\nHi %s", userName() )
+	fmt.Printf("\nProceed to create workspace (Y/n) ? ")
 
 	var b []byte = make([]byte, 2)
 	os.Stdin.Read(b)
 	switch b[0] {
 	case 'y':
+		Login()
 		fmt.Println("Checking out workspace....")
 		args := append([]string{"mkws"}, flat(argMap)...)
 		Run("accurev", args...)
@@ -193,7 +196,19 @@ func checkOut(m map[string]string) {
 	}
 }
 
-func getPWD() string {
+func userName() string {
+	o, _ := Output("accurev", "info")
+	r, e := regexp.Compile("Principal:.*\n")
+	if e != nil {
+		fmt.Println( e )
+		return ""
+	}
+	
+	arr := strings.Split( r.FindString( o ), ":" )
+	return strings.TrimSpace( arr[ len(arr) - 1 ] )
+}
+
+func pwd() string {
 	dir, e := os.Getwd()
 	if e != nil {
 		fmt.Println(e)
@@ -272,9 +287,17 @@ func Output(s string, arg ...string) (string, error) { //when stdout is needed
 
 func Authen() {
 	if TryRun("accurev", "show", "sessions") != nil {
-		fmt.Println("AccuRev Login >>")
-		Run("accurev", "login")
+		Login()
 	}
+}
+
+func Logout() {
+	Run("accurev", "logout")
+}
+
+func Login() {
+	fmt.Println("AccuRev Login >>")
+	Run("accurev", "login")
 }
 
 func filter(pat []byte, allStreams []string) []string {
