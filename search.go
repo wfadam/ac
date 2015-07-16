@@ -22,12 +22,12 @@ func (v ByValue) Less(i,j int) bool {
 	return v[i] > v[j] // from large to small
 }
 
-func topWeight( zipFileName string, allStreams []string) int {
+func topWeight( zipFileName string, allStreams chan []string) int {
 	freqMap := make(map[string]int) 
 	allKeys := getKeyWords( zipFileName )
 	
 	// map stream to key words hit count
-	reduced := allStreams
+	reduced := <-allStreams
 	for _, key := range allKeys {
 		part := filter( []byte(key), reduced )
 
