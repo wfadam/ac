@@ -133,7 +133,7 @@ func flat(m map[string]string) []string {
 }
 
 func promote() {
-	Login()
+	
 	fmt.Println("External Files:")
 	o, _ := Output("accurev", "stat", "-R", ".", "-x")
 	if len(o) != 0 {
