@@ -79,7 +79,7 @@ func dispatchQuery(pat []byte, tgt []string, tNameMap map[string]string) {
 		return
 	}
 
-	if len(tgt) == 2 { // creates # of goroutines equivalent to slice length
+	if len(tgt) <= 2 { // creates # of goroutines equivalent to slice length
 		dispMap(pat, tgt, tNameMap)
 
 		jobs := make(chan string, len(tgt))
