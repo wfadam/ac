@@ -32,7 +32,7 @@ func main() {
 	clearTTY()
 	var candidates []string
 
-	if len(os.Args) > 1 { // when do search with zip file name
+	if len(os.Args) > 1 { // when search by zip file name
 
 		zipFileName := os.Args[1]
 		top := topWeight(zipFileName, allStreams) // top match index
@@ -40,20 +40,20 @@ func main() {
 		candidates = getStreams(top)
 		dispSlice(candidates)
 
-	} else { // when do manual search
+	} else { // when search by pattern
 
 		pattern, confirmed := input()
+		tMap := make(map[string]string) // stream -> tXXXXXX
+		wk := workers(5, tMap)
+		alls := <-allStreams
 		go func() {
-			tMap := make(map[string]string) // stream -> tXXXXXX
-			alls := <-allStreams
 			for {
 				pat := <-pattern
 				candidates = filter(pat, alls)
-				disp(pat, candidates)
-				dispatchQuery(pat, candidates, tMap)
+				dispMap(pat, candidates, tMap)
+				dispatchQuery(candidates, wk)
 			}
 		}()
-
 		<-confirmed
 
 	}
@@ -74,29 +74,38 @@ func main() {
 	Logout()
 }
 
-func dispatchQuery(pat []byte, tgt []string, tNameMap map[string]string) {
-	if len(tgt) == 0 {
+func workers(cnt int, m map[string]string) chan string {
+
+	c := make(chan string, cnt)
+
+	for i := 0; i < cnt; i++ {
+		go func() {
+			for {
+				sn := <-c
+				if _, has := m[sn]; !has {
+					m[sn] = fmt.Sprintf("%s\t, %s", sn, getTestProgramName(sn))
+				}
+			}
+		}()
+	}
+
+	return c
+}
+
+func dispatchQuery(jobs []string, wk chan string) {
+	if len(jobs) == 0 {
 		return
 	}
 
-	if len(tgt) <= 2 { // creates # of goroutines equivalent to slice length
-		dispMap(pat, tgt, tNameMap)
-
-		jobs := make(chan string, len(tgt))
-		for _, s := range tgt {
-			jobs <- s
-		}
-		close(jobs)
-
-		for s := range jobs {
-			if _, has := tNameMap[s]; !has {
-				go func(sn string) {
-					tNameMap[sn] = fmt.Sprintf("%s\t, %s", sn, getTestProgramName(sn))
-					dispMap(pat, tgt, tNameMap)
-				}(s)
-			}
-		}
+	if len(jobs) > 2*cap(wk) { // job count is limited
+		return
 	}
+
+	go func() {
+		for _, j := range jobs {
+			wk <- j
+		}
+	}()
 }
 
 func goPromote() bool {
@@ -133,7 +142,6 @@ func flat(m map[string]string) []string {
 }
 
 func promote() {
-	
 	fmt.Println("External Files:")
 	o, _ := Output("accurev", "stat", "-R", ".", "-x")
 	if len(o) != 0 {
@@ -180,9 +188,8 @@ again:
 func checkOut(m map[string]string) {
 	fmt.Printf("\n\n\n")
 	fmt.Printf("Base Stream : %s\n", m["-b"])
-	fmt.Printf("Local Path : %s\n", m["-l"])
-	fmt.Printf("\nHi %s", <-usrNm)
-	fmt.Printf("\nProceed to create workspace (Y/n) ? ")
+	fmt.Printf("Local Path  : %s\n", m["-l"])
+	fmt.Printf("\nProceed to create a workspace of ___%s___  (Y/n) ? ", <-usrNm)
 
 	var b []byte = make([]byte, 2)
 	os.Stdin.Read(b)
