@@ -186,21 +186,27 @@ again:
 }
 
 func checkOut(m map[string]string) {
+
 	fmt.Printf("\n\n\n")
 	fmt.Printf("Base Stream : %s\n", m["-b"])
 	fmt.Printf("Local Path  : %s\n", m["-l"])
-	fmt.Printf("\nProceed to create a workspace of ___%s___  (Y/n) ? ", <-usrNm)
+	msg := fmt.Sprintf("\nProceed to create a workspace of ___%s___  (Y/n) ? ", <-usrNm)
+	fmt.Print( msg )
 
 	var b []byte = make([]byte, 2)
+again2:
 	os.Stdin.Read(b)
 	switch b[0] {
-	case 'y':
+	case 'Y':
 		Login()
 		fmt.Println("Checking out workspace....")
 		args := append([]string{"mkws"}, flat(argMap)...)
 		Run("accurev", args...)
 		os.Chdir(argMap["-l"])
 		Run("accurev", "update")
+	case 'y':
+		fmt.Print( msg )
+		goto again2
 	default:
 		return
 	}
