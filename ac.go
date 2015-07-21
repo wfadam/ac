@@ -44,7 +44,7 @@ func main() {
 
 		pattern, confirmed := input()
 		tMap := make(map[string]string) // stream -> tXXXXXX
-		wk := workers(5, tMap)
+		wk := workers(4, tMap)
 		alls := <-allStreams
 		go func() {
 			for {
@@ -239,12 +239,19 @@ func pwd() string {
 func getTestProgramName(bs string) string {
 
 	patDieConfDir := "[1-9]+D([1-9]+CE)?"
-	r, _ := regexp.Compile(patDieConfDir)
+	r, _ := regexp.Compile( patDieConfDir )
 	if !r.MatchString(bs) { // void of "xDxCE" in stream name
-		return ""
+		return "stream regex compile fail"
 	}
 
-	proNameFile := "./" + r.FindString(bs) + "/proname"
+	folderName := r.FindString(bs)
+	var proNameFile string
+	if strings.Contains( folderName, "CE" ) {
+		proNameFile = "./" + folderName + "/proname"
+	} else {
+		proNameFile = "./" + folderName + "1CE/proname"
+	}
+
 	o, _ := Output("accurev", "cat", "-v", bs, proNameFile)
 	return strings.TrimSpace(fmt.Sprintf("%s", o))
 
