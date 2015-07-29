@@ -20,15 +20,16 @@ var (
 
 func main() {
 
+	Authen()
+	usrNm = userName()
+
 	if goPromote() {
-		Login()
 		promote()
 		os.Exit(0)
 	}
 
-	Authen()
-	usrNm = userName()
 	allStreams := queryStreams()
+
 	clearTTY()
 	var candidates []string
 
@@ -44,7 +45,7 @@ func main() {
 
 		pattern, confirmed := input()
 		tMap := make(map[string]string) // stream -> tXXXXXX
-		wk := workers(4, tMap)
+		wk := workers(5, tMap)
 		alls := <-allStreams
 		go func() {
 			for {
@@ -71,7 +72,7 @@ func main() {
 	//enc.Encode(argMap)
 	checkOut(argMap)
 
-	Logout()
+	//Logout()
 }
 
 func workers(cnt int, m map[string]string) chan string {
@@ -142,47 +143,48 @@ func flat(m map[string]string) []string {
 }
 
 func promote() {
-	fmt.Println("External Files:")
+	oa := []string{}
+
 	o, _ := Output("accurev", "stat", "-R", ".", "-x")
-	if len(o) != 0 {
-		fmt.Println(o)
-		confirm("Proceed to add new files ? (Y/n) ")
-		Run("accurev", "add", "-x")
-	}
+	oa = append(oa, o)
 
-	fmt.Println("Modified Files:")
 	o, _ = Output("accurev", "stat", "-R", ".", "-m")
-	if len(o) != 0 {
-		fmt.Println(o)
-		confirm("Proceed to promote modified files ? (Y/n) ")
-		Run("accurev", "keep", "-m", "-c", "automated")
+	oa = append(oa, o)
+
+	if len(strings.TrimSpace(strings.Join(oa, ""))) == 0 {
+		fmt.Printf("Nothing to be promoted. Quit\n")
+		os.Exit(0)
 	}
 
-	fmt.Println("Pending Files:")
-	o, _ = Output("accurev", "stat", "-R", ".", "-p")
-	if len(o) != 0 {
-		fmt.Println(o)
-		confirm("Proceed to promote pending files ? (Y/n) ")
-		Run("accurev", "promote", "-p", "-c", "automated")
-	}
+	fmt.Println(strings.Join(oa, ""))
+	comments := comment()
+
+	confirm(fmt.Sprintf("Promote all changes on behalf of __%s__ ? (Y/n) ", <-usrNm))
+	TryRun("accurev", "add", "-x")
+	TryRun("accurev", "keep", "-m", "-c", comments)
+	Run("accurev", "promote", "-p", "-c", comments)
+}
+
+func comment() string {
+	return fmt.Sprintf("Promoted from local folder: %s", pwd())
 }
 
 func confirm(msg string) {
 
 	fmt.Print(msg)
 	var b []byte = make([]byte, 2)
-again:
-	os.Stdin.Read(b)
-	switch b[0] {
-	case 'Y':
-		return
-	case 'y':
-		fmt.Print(msg)
-		goto again
-	default:
-		os.Exit(0)
+	for {
+		os.Stdin.Read(b)
+		switch b[0] {
+		case 'Y':
+			return
+		case 'y':
+			fmt.Print(msg)
+			continue
+		default:
+			os.Exit(0)
+		}
 	}
-
 }
 
 func checkOut(m map[string]string) {
@@ -190,25 +192,27 @@ func checkOut(m map[string]string) {
 	fmt.Printf("\n\n\n")
 	fmt.Printf("Base Stream : %s\n", m["-b"])
 	fmt.Printf("Local Path  : %s\n", m["-l"])
-	msg := fmt.Sprintf("\nProceed to create a workspace of ___%s___  (Y/n) ? ", <-usrNm)
-	fmt.Print( msg )
+	msg := fmt.Sprintf("\nCreate a workspace on behalf of ___%s___  (Y/n) ? ", <-usrNm)
+	fmt.Print(msg)
 
 	var b []byte = make([]byte, 2)
-again2:
-	os.Stdin.Read(b)
-	switch b[0] {
-	case 'Y':
-		Login()
-		fmt.Println("Checking out workspace....")
-		args := append([]string{"mkws"}, flat(argMap)...)
-		Run("accurev", args...)
-		os.Chdir(argMap["-l"])
-		Run("accurev", "update")
-	case 'y':
-		fmt.Print( msg )
-		goto again2
-	default:
-		return
+	for {
+		os.Stdin.Read(b)
+		switch b[0] {
+		case 'Y':
+			//Login()
+			fmt.Println("Checking out workspace....")
+			args := append([]string{"mkws"}, flat(argMap)...)
+			Run("accurev", args...)
+			os.Chdir(argMap["-l"])
+			Run("accurev", "update")
+			return
+		case 'y':
+			fmt.Print(msg)
+			continue
+		default:
+			os.Exit(0)
+		}
 	}
 }
 
@@ -239,14 +243,14 @@ func pwd() string {
 func getTestProgramName(bs string) string {
 
 	patDieConfDir := "[1-9]+D([1-9]+CE)?"
-	r, _ := regexp.Compile( patDieConfDir )
+	r, _ := regexp.Compile(patDieConfDir)
 	if !r.MatchString(bs) { // void of "xDxCE" in stream name
-		return "stream regex compile fail"
+		return ""
 	}
 
 	folderName := r.FindString(bs)
 	var proNameFile string
-	if strings.Contains( folderName, "CE" ) {
+	if strings.Contains(folderName, "CE") {
 		proNameFile = "./" + folderName + "/proname"
 	} else {
 		proNameFile = "./" + folderName + "1CE/proname"
@@ -416,7 +420,7 @@ func input() (chan []byte, chan bool) {
 func queryStreams() chan []string {
 	c := make(chan []string)
 	go func() {
-		s, e := Output("accurev", "show", "streams", "-d", "-p", "MT_Production_Test_Programs")
+		s, e := Output("accurev", "show", "streams", "-p", "MT_Production_Test_Programs")
 		if e != nil {
 			fmt.Println(e)
 			os.Exit(1)
