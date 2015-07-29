@@ -24,6 +24,7 @@ func main() {
 	usrNm = userName()
 
 	if goPromote() {
+		fmt.Println("Calculating changes ...")
 		promote()
 		os.Exit(0)
 	}
@@ -152,12 +153,22 @@ func promote() {
 	oa = append(oa, o)
 
 	if len(strings.TrimSpace(strings.Join(oa, ""))) == 0 {
-		fmt.Printf("Nothing to be promoted. Quit\n")
+		fmt.Printf("Nothing changed. Quit\n")
 		os.Exit(0)
 	}
 
-	fmt.Println(strings.Join(oa, ""))
-	comments := comment()
+	comments := comment(oa)
+
+	clearTTY()
+	fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>Comments Begin")
+	fmt.Println(comments)
+	fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>Comments End")
+
+	fmt.Println()
+	for _, s := range oa {
+		fmt.Println(strings.TrimSpace(s))
+	}
+	fmt.Println()
 
 	confirm(fmt.Sprintf("Promote all changes on behalf of __%s__ ? (Y/n) ", <-usrNm))
 	TryRun("accurev", "add", "-x")
@@ -165,8 +176,11 @@ func promote() {
 	Run("accurev", "promote", "-p", "-c", comments)
 }
 
-func comment() string {
-	return fmt.Sprintf("Promoted from local folder: %s", pwd())
+func comment(modFiles []string) string {
+	msg := []string{}
+	msg = append(msg, fmt.Sprintf("Workspace Path: %s", pwd()))
+	msg = append(msg, lastRevHist(modFiles))
+	return strings.TrimSpace(strings.Join(msg, "\n"))
 }
 
 func confirm(msg string) {
