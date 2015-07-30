@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"io/ioutil"
 	"regexp"
 	"strings"
 )
@@ -52,6 +53,15 @@ func lastMatchLn(r *regexp.Regexp, lines []string) int {
 		}
 	}
 	return -1
+}
+
+func genCommentFile(msg string) string {
+
+	file, e := ioutil.TempFile(os.TempDir(), "commitMsg")
+	checkError( e )
+
+	ioutil.WriteFile(file.Name(), []byte(msg), 0644)
+	return file.Name()
 }
 
 func checkError(e error) {
