@@ -61,6 +61,30 @@ func main() {
 	}
 
 	baseStream := pickStream(candidates)
+
+	optMsg := `
+0 : Check out a workspace
+1 : Make a dynamic stream
+`
+	fmt.Println(optMsg)
+	var b []byte = make([]byte, 2)
+	for {
+		fmt.Print("Choose option # : ")
+		os.Stdin.Read(b)
+		switch b[0] {
+		case '0':
+			goto doCheckOut
+		case '1':
+			fmt.Printf("\nBacking stream : %s\n", baseStream)
+			stream := readInput("New Stream Name : ")
+			makeStream(stream, baseStream)
+			os.Exit(0)
+		default:
+			continue
+		}
+	}
+doCheckOut:
+
 	workSpace := strings.Join([]string{setTCRnum(), baseStream}, "_")
 	dir := strings.Join([]string{pwd(), workSpace}, "/")
 
@@ -158,7 +182,7 @@ func promote() {
 	}
 
 	comments := comment(oa)
-	commentFile := fmt.Sprintf("@%s", genCommentFile( comments ))
+	commentFile := fmt.Sprintf("@%s", genCommentFile(comments))
 
 	clearTTY()
 	fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>Comments Begin")
@@ -184,6 +208,20 @@ func comment(modFiles []string) string {
 	return strings.TrimSpace(strings.Join(msg, "\n"))
 }
 
+func readInput(prompt string) string {
+	fmt.Print(prompt)
+
+	var b []byte = make([]byte, 80)
+	os.Stdin.Read(b)
+
+	rtn := strings.TrimSpace(string(b))
+
+	if i := strings.Index(rtn, "\n"); i >= 0 {
+		return rtn[:i]
+	}
+	return rtn
+}
+
 func confirm(msg string) {
 
 	fmt.Print(msg)
@@ -200,6 +238,12 @@ func confirm(msg string) {
 			os.Exit(0)
 		}
 	}
+}
+
+func makeStream(stream, backingStream string) {
+	confirm(fmt.Sprintf("Create a new stream on behalf of __%s__ ? (Y/n) ", <-usrNm))
+
+	Run("accurev", "mkstream", "-s", stream, "-b", backingStream)
 }
 
 func checkOut(m map[string]string) {
@@ -308,7 +352,7 @@ func Run(s string, arg ...string) error { //when stdin is needed
 
 	e := cmd.Run()
 	if e != nil {
-		fmt.Printf("Exit on execution of %s %s\n", s, arg)
+		fmt.Printf("Error out on execution of %s %s\n", s, arg)
 		os.Exit(1)
 	}
 	return e
@@ -375,7 +419,7 @@ func disp(pat []byte, arr []string) {
 
 	clearTTY()
 	dispSlice(arr)
-	fmt.Printf("\nSearch base stream : %s", string(pat))
+	fmt.Printf("\nSearch streams : %s", string(pat))
 }
 
 func pickStream(candidates []string) string {
@@ -385,7 +429,7 @@ func pickStream(candidates []string) string {
 	}
 
 	maxIdx := int64(len(candidates) - 1)
-	msg := fmt.Sprintf("\nChoose stream from 0 to %d : ", maxIdx)
+	msg := fmt.Sprintf("\nChoose a stream from 0 to %d : ", maxIdx)
 	br := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Print(msg)
