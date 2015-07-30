@@ -158,6 +158,7 @@ func promote() {
 	}
 
 	comments := comment(oa)
+	commentFile := fmt.Sprintf("@%s", genCommentFile( comments ))
 
 	clearTTY()
 	fmt.Println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>Comments Begin")
@@ -172,8 +173,8 @@ func promote() {
 
 	confirm(fmt.Sprintf("Promote all changes on behalf of __%s__ ? (Y/n) ", <-usrNm))
 	TryRun("accurev", "add", "-x")
-	TryRun("accurev", "keep", "-m", "-c", comments)
-	Run("accurev", "promote", "-p", "-c", comments)
+	TryRun("accurev", "keep", "-m", "-c", commentFile)
+	Run("accurev", "promote", "-p", "-c", commentFile)
 }
 
 func comment(modFiles []string) string {
