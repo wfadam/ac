@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	//"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -93,11 +92,8 @@ doCheckOut:
 	argMap["-w"] = workSpace
 	argMap["-l"] = dir
 
-	//enc := json.NewEncoder(os.Stdout)
-	//enc.Encode(argMap)
 	checkOut(argMap)
 
-	//Logout()
 }
 
 func workers(cnt int, m map[string]string) chan string {
